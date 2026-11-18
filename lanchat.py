@@ -445,20 +445,16 @@ class ConsoleUI:
         return text
 
     # -- output (any thread) ----------------------------------------------
-    def print(self, text=""):
+    def print(self, text: str = "") -> None:
         with self.lock:
             out = []
-
             show = self.interactive and self._prompt_shown
-
             if show:
                 out.append(self._erase_seq())
-
             out.append(text + "\n")
-
+            self._line_key = None
             if show:
                 out.append(self._draw_seq())
-
             self._write("".join(out))
 
     def update_line(self, key: str, text: str, force_new: bool = False) -> None:
@@ -934,19 +930,24 @@ class ChatApp:
                 msg += " Chat closed."
         self.ui.print(msg)
 
-    def _on_message(self, conn, text):
+    def _on_message(self, conn: Connection, text: str) -> None:
         text = sanitize_text(text)
         peer = conn.peer
-
         with self.lock:
-            self.history.setdefault(
-                peer, deque(maxlen=500)
-            ).append((peer, text))
-
+            self.history.setdefault(peer, deque(maxlen=500)).append((peer, text))
             is_current = self.current == peer
-
+            if not is_current:
+                pending = self.unread.setdefault(peer, [])
+                pending.append(text)
+                count = len(pending)
+            no_partner = self.current is None
         if is_current:
             self.ui.print(f"[{peer}] {text}")
+        else:
+            note = f"[*] New message from {peer} ({count} unread)"
+            if no_partner:
+                note += f" - type /chat {peer}"
+            self.ui.update_line(f"unread:{peer}", note, force_new=True)
 
     # ------------------------------------------------------------------ files
     def _receive_file(self, conn: Connection, reader: SocketReader, raw_name: str,
